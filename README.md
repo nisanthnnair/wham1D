@@ -11,41 +11,30 @@ along a single collective variable (CV). The umbrella bias is
 
 ```text
 wham1d/
-├── Makefile                 # builds wham1d and wham1d_print2d
 ├── wham_1D.f90              # 1D histograms -> 1D free energy
-├── wham_1D_print2D.f90      # 2D histograms, bias only along cv1 -> 2D FES
 ├── input.example            # sample input (non-periodic CV, iwrap=0)
 ├── input.example.periodic   # sample input (2pi-periodic CV, iwrap=1)
-├── input_2D.example         # sample input for wham_1D_print2D
 ├── whaminput.example        # sample umbrella list
 ├── README.md
-└── test/                    # synthetic 1D double-well example
-    ├── input
-    ├── whaminput
-    ├── true_fes.dat
-    └── PROB/
-        ├── PROB_-1.5
-        ├── PROB_-1.0
-        └── ...
 ```
 
 ## Build
 
-```bash
-make          # builds ./wham1d and ./wham1d_print2d
-```
-
 Requires `mpif90` (Open MPI / MPICH). On macOS with Homebrew gfortran, the
 Makefile sets `SDKROOT` automatically.
+
+```bash
+mpif90 wham_1D.f90  -o wham1d.x
+```
 
 ## Run directory
 
 From a working directory that contains the input files and histogram paths:
 
 ```bash
-mpirun -np 1 /path/to/wham1d
+mpirun -np 1 /path/to/wham1d.x
 # or
-mpirun -np N /path/to/wham1d
+mpirun -np N /path/to/wham1d.x
 ```
 
 Output file: `free_energy` with columns `cv  F(cv)  P(cv)` (kcal/mol).
@@ -64,7 +53,7 @@ cvmin cvmax dcv
 | `ncv`   | Number of CVs. Must be `1` for `wham_1D`. |
 | `umbr_n`| Number of umbrella windows. |
 | `T(K)`  | Temperature in Kelvin. |
-| `iwrap` | `1` = treat CV as 2π-periodic (−π…π wrapping); `0` = no wrapping (distances, unbound angles, etc.). |
+| `iwrap` | `1` = treat CV as 2π-periodic (−π…π wrapping); `0` = no wrapping (distances etc.). |
 | `cvmin` | Lower edge of the CV grid. |
 | `cvmax` | Upper edge of the CV grid. |
 | `dcv`   | Bin width. Number of bins = `nint((cvmax-cvmin)/dcv)+1`. |
@@ -121,12 +110,3 @@ When `iwrap = 1`:
 
 When `iwrap = 0`, no wrapping is applied. Use this for non-periodic CVs such as
 distances or unbounded coordinates.
-
-## Quick test
-
-```bash
-cd test
-mpirun -np 1 ../wham1d
-```
-
-Compare `free_energy` with `true_fes.dat`.
