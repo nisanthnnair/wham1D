@@ -5,9 +5,9 @@
 !***********************************************!
 program fes_calc
 implicit none
-integer i, iter, ncv, umbr_n, nbin1, iwrap
+integer i, iter, ncv, umbr_n, nbin1, iwrap, max_iter, ios
 real*8, allocatable :: grid0(:,:), prob(:), biased_prob(:,:), grid(:,:)
-real*8 :: kt, toler, dummy
+real*8 :: kt, toler, dummy, pnorm
 logical :: parent
 integer :: i_umbr, i_s1, isp
 character (len=256) cvfile, f1, line
@@ -18,17 +18,27 @@ integer :: rank, gleng1_min, gleng1_max
 real*8, parameter :: kb=1.9872041E-3 !kcal K-1 mol-1
 real*8, parameter :: au_to_kcal = 627.51
 real*8, parameter :: kj_to_kcal = 0.239006
+integer, parameter :: max_iter_default = 2000
+! if |int P(s) ds - 1| > norm_tol, renormalize P in place (density convention)
+real*8, parameter :: norm_tol = 0.1d0
 
 CALL MPI_Start
 CALL Set_Parent(parent)
 
+max_iter=max_iter_default
 
 if(parent)then
   open (unit=1, file='input',status='old')
-  !read number of cv, number of umbrella, kt in Kelvin, iwrap (1=periodic 2pi, 0=no wrap)
-  read(1,*)ncv, umbr_n, kt, iwrap
+  !read ncv, umbr_n, kt, iwrap, and optional max_iter (default 2000)
+  read(1,'(a)') line
+  read(line,*,iostat=ios) ncv, umbr_n, kt, iwrap, max_iter
+  if(ios.ne.0)then
+     read(line,*) ncv, umbr_n, kt, iwrap
+     max_iter=max_iter_default
+  end if
   if (ncv.gt.1) STOP 'ncv > 1 is not supported in 1D WHAM'
   if ((iwrap.ne.0).and.(iwrap.ne.1)) STOP 'iwrap must be 0 (non-periodic) or 1 (2pi periodic)'
+  if (max_iter.lt.1) STOP 'max_iter must be >= 1'
 end if
   kt=kb*kt
 
@@ -37,6 +47,7 @@ CALL IBcast(ncv,1)
 CALL IBcast(umbr_n,1)
 CALL RBcast(kt,1)
 CALL IBcast(iwrap,1)
+CALL IBcast(max_iter,1)
 
 if (ncv.ne.1) STOP 'This code implements 1D WHAM only (ncv = 1)'
 
@@ -100,6 +111,29 @@ if (parent) then
          read(3,*)dummy,biased_prob(i_s1,i_umbr)
       end do
       close(3)
+
+      ! WHAM weights use nmax * P_i(s); P_i should be a normalized density: int P_i(s) ds = 1
+      pnorm=0.0d0
+      do i_s1=1,nbin1
+         pnorm=pnorm+biased_prob(i_s1,i_umbr)
+      end do
+      pnorm=pnorm*grid0(3,1)
+      write(*,'(A,I5,A,E16.8)') ' umbrella', i_umbr, &
+           '  int P(s) ds (before normalization) =', pnorm
+      if(dabs(pnorm-1.0d0).gt.norm_tol)then
+         write(*,*) 'WARNING: int P(s) ds is not 1 within tolerance ', norm_tol
+         write(*,*) ' file = ', trim(cvfile)
+         write(*,*) ' performing brute-force normalization: P(s) <- P(s) / int P(s) ds'
+         if(pnorm.le.0.0d0)then
+            write(*,*) 'ERROR: int P(s) ds <= 0; cannot normalize'
+            STOP 'non-positive probability integral'
+         end if
+         do i_s1=1,nbin1
+            biased_prob(i_s1,i_umbr)=biased_prob(i_s1,i_umbr)/pnorm
+         end do
+         write(*,'(A,I5,A,E16.8)') ' umbrella', i_umbr, &
+              '  int P(s) ds (after normalization) =', 1.0d0
+      end if
    enddo
    close(2)
    close(1)
@@ -114,6 +148,7 @@ call RBcast(biased_prob,nbin1*umbr_n)
 !PERFORMS WHAM.
  if (parent) then
     write(*,*) 'wham begins'
+    write(*,*) 'max_iter =', max_iter
     if(iwrap.eq.1)then
        write(*,*) 'iwrap = 1 : applying 2pi periodic wrapping'
     else
@@ -131,9 +166,17 @@ call RBcast(biased_prob,nbin1*umbr_n)
        if (mod(iter,100) .eq. 0 ) then
        call print_pmf(ncv,nbin1,grid0,kt,prob,parent)
        endif
-       if((cnvg.lt.toler).or.(iter.ge.20000))then
-       if (parent) write(*,*)'** convergence achieved **'
-       exit scf_loop
+       if(cnvg.lt.toler)then
+          if (parent) write(*,*)'** convergence achieved **'
+          exit scf_loop
+       end if
+       if(iter.ge.max_iter)then
+          if (parent) then
+             write(*,*)'** WARNING: convergence not reached **'
+             write(*,*)'** maximum iteration reached: max_iter =', max_iter, &
+                       '  final convergence =', cnvg, '  tolerance =', toler
+          end if
+          exit scf_loop
        end if
    end do scf_loop
 
