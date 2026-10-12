@@ -54,6 +54,7 @@ cvmin cvmax dcv
 | `umbr_n`| Number of umbrella windows. |
 | `T(K)`  | Temperature in Kelvin. |
 | `iwrap` | `1` = treat CV as 2π-periodic (−π…π wrapping); `0` = no wrapping (distances etc.). |
+| `max_iter` | Optional. Maximum WHAM SCF iterations (default **2000** if omitted). |
 | `cvmin` | Lower edge of the CV grid. |
 | `cvmax` | Upper edge of the CV grid. |
 | `dcv`   | Bin width. Number of bins = `nint((cvmax-cvmin)/dcv)+1`. |
@@ -62,10 +63,10 @@ Examples:
 
 ```text
 # non-periodic distance-like CV
-1    7    300.0    0
+1    7    300.0    0    2000
 0.00  10.00  0.05
 
-# dihedral / 2pi-periodic CV
+# dihedral / 2pi-periodic CV (max_iter omitted -> default 2000)
 1    16   300.0    1
 -3.14  3.14  0.10
 ```
