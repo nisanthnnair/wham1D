@@ -247,12 +247,15 @@ call RBcast(hist_count(1,1),nbin1*umbr_n)
 
  !---------- bootstrap error estimate ----------
  ! align reference FE to its minimum
+ ! (save Fmin first: in-place Fref(i)=Fref(i)-Fref(iref) zeros the
+ !  reference bin too early and leaves later bins unshifted)
  iref=1
  do i_s1=2,nbin1
     if(Fref(i_s1).lt.Fref(iref)) iref=i_s1
  enddo
+ meanF=Fref(iref)
  do i_s1=1,nbin1
-    Fref(i_s1)=Fref(i_s1)-Fref(iref)
+    Fref(i_s1)=Fref(i_s1)-meanF
  enddo
 
  if(nboot.gt.0)then
@@ -275,9 +278,10 @@ call RBcast(hist_count(1,1),nbin1*umbr_n)
             nbin1,ncv,kt,prob_boot,cnvg,gleng1_min,gleng1_max,iwrap,toler, &
             max_iter,parent,quiet)
        call gather_prob_to_F(nbin1,grid0,kt,prob_boot,Fboot(1,iboot),parent)
-       ! align to same reference bin as Fref
+       ! align to same reference bin as Fref (save value before overwriting)
+       meanF=Fboot(iref,iboot)
        do i_s1=1,nbin1
-          Fboot(i_s1,iboot)=Fboot(i_s1,iboot)-Fboot(iref,iboot)
+          Fboot(i_s1,iboot)=Fboot(i_s1,iboot)-meanF
        enddo
     enddo
     ! Clip unphysical FE (empty bins) before taking std. err.
