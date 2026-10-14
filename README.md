@@ -11,67 +11,114 @@ along a single collective variable (CV). The umbrella bias is
 
 ```text
 wham1d/
-├── wham_1D.f90              # 1D histograms -> 1D free energy
-├── input.example            # sample input (non-periodic CV, iwrap=0)
-├── input.example.periodic   # sample input (2pi-periodic CV, iwrap=1)
-├── whaminput.example        # sample umbrella list
+├── Makefile
+├── wham_1D.f90                   # main program
+├── input.example                 # histograms + bootstrap errors
+├── input.example.periodic        # 2π-periodic CV (iwrap=1)
+├── input.example.timeseries      # build P(s) from time series
+├── whaminput.example
+├── whaminput.example.timeseries
 ├── README.md
+└── test/                         # synthetic double-well example
+    ├── input
+    ├── whaminput
+    ├── true_fes.dat
+    └── PROB/
 ```
 
 ## Build
 
-Requires `mpif90` (Open MPI / MPICH). On macOS with Homebrew gfortran, the
-Makefile sets `SDKROOT` automatically.
+Requires `mpif90` (Open MPI / MPICH).
 
 ```bash
-mpif90 wham_1D.f90  -o wham1d.x
+make          # builds ./wham1d
 ```
 
-## Run directory
-
-From a working directory that contains the input files and histogram paths:
+Or directly:
 
 ```bash
-mpirun -np 1 /path/to/wham1d.x
+mpif90 wham_1D.f90 -o wham1d
+```
+
+On macOS with Homebrew gfortran, the Makefile sets `SDKROOT` automatically.
+
+## Run
+
+From a directory that contains `input`, `whaminput`, and the histogram / trajectory files:
+
+```bash
+mpirun -np 1 /path/to/wham1d
 # or
-mpirun -np N /path/to/wham1d.x
+mpirun -np N /path/to/wham1d
 ```
 
-Output file: `free_energy` with columns `cv  F(cv)  P(cv)` (kcal/mol).
-
-## Required input files
-
-### 1. `input`
+### Output: `free_energy.dat`
 
 ```text
-ncv   umbr_n   T(K)   iwrap
+# cv   F(cv)   dF(cv)   P(cv)   [kcal/mol]
+```
+
+| Column | Meaning |
+|--------|---------|
+| `cv` | Collective variable |
+| `F(cv)` | Free energy (kcal/mol), shifted so \(\min F = 0\) |
+| `dF(cv)` | Bootstrap std. error (kcal/mol); `0` if `nboot = 0` |
+| `P(cv)` | Unbiased probability density |
+
+`dF = 0` at the FE minimum by construction (alignment reference bin).
+
+---
+
+## Input file (`input`)
+
+```text
+ncv   umbr_n   T(K)   iwrap   [max_iter]   [itseries]   [nboot]
 cvmin cvmax dcv
 ```
 
-| Field   | Meaning |
-|---------|---------|
-| `ncv`   | Number of CVs. Must be `1` for `wham_1D`. |
-| `umbr_n`| Number of umbrella windows. |
-| `T(K)`  | Temperature in Kelvin. |
-| `iwrap` | `1` = treat CV as 2π-periodic (−π…π wrapping); `0` = no wrapping (distances etc.). |
-| `max_iter` | Optional. Maximum WHAM SCF iterations (default **2000** if omitted). |
-| `cvmin` | Lower edge of the CV grid. |
-| `cvmax` | Upper edge of the CV grid. |
-| `dcv`   | Bin width. Number of bins = `nint((cvmax-cvmin)/dcv)+1`. |
+| Field | Meaning |
+|-------|---------|
+| `ncv` | Number of CVs. Must be **1**. |
+| `umbr_n` | Number of umbrella windows. |
+| `T(K)` | Temperature in Kelvin. |
+| `iwrap` | `1` = 2pi-periodic CV (−pi...pi wrapping); `0` = no wrapping. |
+| `max_iter` | Max WHAM SCF iterations (default **2000** if omitted). |
+| `itseries` | `0` = read histograms (default); `1` = build histograms from time series. |
+| `nboot` | Bootstrap samples for FE error (default **0** = no errors). |
+| `cvmin` `cvmax` `dcv` | CV grid. `nbin = nint((cvmax-cvmin)/dcv)+1`. |
 
-Examples:
+Uneven umbrella centers are allowed. If SCF does not reach `tolerance` by `max_iter`, a warning is printed and `free_energy.dat` is still written.
+
+### Examples
+
+Histograms, non-periodic CV, 50 bootstrap samples:
 
 ```text
-# non-periodic distance-like CV
-1    7    300.0    0    2000
-0.00  10.00  0.05
+1    7    300.0    0    2000    0    50
+-2.00  2.00  0.05
+```
 
-# dihedral / 2pi-periodic CV (max_iter omitted -> default 2000)
-1    16   300.0    1
+Periodic (dihedral-like) CV:
+
+```text
+1    16   300.0    1    2000    0    0
 -3.14  3.14  0.10
 ```
 
-### 2. `whaminput`
+Time series -> histograms, with errors:
+
+```text
+1    7    300.0    0    2000    1    50
+-2.00  2.00  0.05
+```
+
+---
+
+## Umbrella list (`whaminput`)
+
+Order matters: **file name first**, then umbrella parameters.
+
+### Histogram mode (`itseries = 0`)
 
 ```text
 tolerance
@@ -84,30 +131,76 @@ cv0_2   k_2(kJ)   nmax_2
 
 | Field | Meaning |
 |-------|---------|
-| `tolerance` | SCF convergence threshold on Σ\|Δln aᵢ\| × kT. |
-| `histogram_file` | Path to the biased probability file for that window. |
-| `cv0` | Umbrella center. |
-| `k` | Harmonic force constant in **kJ** (converted internally to kcal). |
-| `nmax` | Number of samples / weight for that window. |
+| `tolerance` | SCF threshold on \(k_BT \sum_i \|\Delta\ln a_i\|\). |
+| `histogram_file` | Path to biased probability file. |
+| `cv0` | Umbrella center (same units as the histogram CV). |
+| `k` | Harmonic force constant in **kJ** (converted to kcal internally). |
+| `nmax` | Number of samples used to build that histogram. |
 
-There must be exactly `umbr_n` (file, parameters) pairs.
+### Time-series mode (`itseries = 1`)
 
-### 3. Histogram files (`PROB/...`)
+```text
+tolerance
+timeseries_file_1
+cv0_1   k_1(kJ)
+timeseries_file_2
+cv0_2   k_2(kJ)
+...
+```
 
-One file per umbrella window. For `wham_1D` each line is:
+No `nmax` — it is counted from the file. Each time-series file has:
+
+```text
+# optional comment lines
+time   cv
+...
+```
+
+Lines starting with `#` are ignored. The code bins `cv` onto `[cvmin,cvmax]` with spacing `dcv` and builds a normalized density \(P(s)\).
+
+---
+
+## Histogram files
+
+For `itseries = 0`, each file is:
 
 ```text
 cv   probability
 ```
 
-There must be exactly `nbin` lines, ordered from `cvmin` to `cvmax` with step `dcv`.
+Rows are matched to the WHAM grid by CV value
+(`ibin = nint((cv-cvmin)/dcv)+1`). Points outside `[cvmin,cvmax]` are ignored.
+
+Each histogram should be a **normalized density**:
+
+```text
+\Int P(s) ds  ≈  \sum_bins P_bin * dcv  =  1
+```
+
+If `|\Int P ds − 1| > 0.1`, the code warns and renormalizes
+`P(s) <- P(s)/ [\Int P ds]`. This is required because WHAM weights windows as
+`nmax * P_i(s)`.
+
+---
 
 ## Periodicity (`iwrap`)
 
-When `iwrap = 1`:
+| `iwrap` | Behavior |
+|---------|----------|
+| `1` | Wrap umbrella centers and \((cv-\mathrm{cv0})\) with period \(2\pi\). |
+| `0` | No wrapping (distances, unbound coordinates, etc.). |
 
-- umbrella centers outside (−π, π] are wrapped into that range
-- CV displacements `(cv − cv0)` used in the bias Boltzmann factor are wrapped by ±2π
+---
 
-When `iwrap = 0`, no wrapping is applied. Use this for non-periodic CVs such as
-distances or unbounded coordinates.
+## Free-energy errors (`nboot`)
+
+With `nboot > 0`, errors use a **Poisson bootstrap** of histogram counts:
+
+1. Bin counts \(N_i(s) = n_{\max,i}\,P_i(s)\,\Delta s\) (or raw counts from time series).
+2. Draw \(N_i^*(s) \sim \mathrm{Poisson}(N_i(s))\).
+3. Renormalize to \(P_i^*\), align each PMF to the reference bin (\(\min F\)).
+4. \(\mathrm{d}F(s) =\) sample standard deviation over the `nboot` PMFs.
+
+This assumes independent bin counts. For strongly correlated MD, a block bootstrap of trajectories is more rigorous (not implemented; full trajectories can be huge). Prefer decorrelated/strided frames and a sufficient `nboot`.
+
+
