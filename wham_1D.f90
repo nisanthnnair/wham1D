@@ -18,7 +18,7 @@ real*8, allocatable :: biased_boot(:,:), prob_boot(:), a_boot(:)
 real*8 :: kt, toler, pnorm
 logical :: parent
 integer :: i_umbr, i_s1, isp, ibin, ios_hist, ios2, npts
-character (len=256) cvfile, f1, line
+character (len=256) cvfile, f1, line, pname, cstr
 real*8 cnvg, cvval, pval, tval, meanF, varF
 real*8, allocatable :: umbr_mean(:), umbr_k(:), a(:)
 integer, allocatable :: nmax(:)
@@ -209,6 +209,21 @@ if (parent) then
          end do
          write(*,'(A,I5,A,E16.8)') ' umbrella', i_umbr, &
               '  int P(s) ds (after normalization) =', 1.0d0
+      end if
+
+      ! Write normalized P(s) when built from time series (itseries=1)
+      if(itseries.eq.1)then
+         write(cstr,'(f0.6)') umbr_mean(i_umbr)
+         cstr=adjustl(cstr)
+         pname='prob_'//trim(cstr)//'.dat'
+         open(unit=8, file=trim(pname), status='unknown')
+         write(8,'(A)') '# s   P(s)   [normalized biased density]'
+         do i_s1=1,nbin1
+            cvval=grid0(1,1)+dfloat(i_s1-1)*grid0(3,1)
+            write(8,'(2E16.8)') cvval, biased_prob(i_s1,i_umbr)
+         end do
+         close(8)
+         write(*,*) ' normalized probability written in ', trim(pname)
       end if
    enddo
    close(2)

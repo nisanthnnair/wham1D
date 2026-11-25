@@ -1,0 +1,8 @@
+# 1D WHAM workspace
+wham1d
+wham1d_print2d
+*.o
+*.mod
+free_energy
+free_energy.dat
+.DS_Store

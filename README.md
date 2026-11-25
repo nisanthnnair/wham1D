@@ -81,7 +81,7 @@ cvmin cvmax dcv
 | `ncv` | Number of CVs. Must be **1**. |
 | `umbr_n` | Number of umbrella windows. |
 | `T(K)` | Temperature in Kelvin. |
-| `iwrap` | `1` = 2pi-periodic CV (−pi...pi wrapping); `0` = no wrapping. |
+| `iwrap` | `1` = 2π-periodic CV (−π…π wrapping); `0` = no wrapping. |
 | `max_iter` | Max WHAM SCF iterations (default **2000** if omitted). |
 | `itseries` | `0` = read histograms (default); `1` = build histograms from time series. |
 | `nboot` | Bootstrap samples for FE error (default **0** = no errors). |
@@ -105,7 +105,7 @@ Periodic (dihedral-like) CV:
 -3.14  3.14  0.10
 ```
 
-Time series -> histograms, with errors:
+Time series → histograms, with errors:
 
 ```text
 1    7    300.0    0    2000    1    50
@@ -158,6 +158,14 @@ time   cv
 
 Lines starting with `#` are ignored. The code bins `cv` onto `[cvmin,cvmax]` with spacing `dcv` and builds a normalized density \(P(s)\).
 
+Each window’s normalized density is also written to
+
+```text
+prob_<cv0>.dat
+```
+
+with columns `s  P(s)`, where `<cv0>` is the umbrella center (e.g. `prob_0.300000.dat`).
+
 ---
 
 ## Histogram files
@@ -174,11 +182,11 @@ Rows are matched to the WHAM grid by CV value
 Each histogram should be a **normalized density**:
 
 ```text
-\Int P(s) ds  ≈  \sum_bins P_bin * dcv  =  1
+∫ P(s) ds  ≈  Σ_bins P_bin * dcv  =  1
 ```
 
-If `|\Int P ds − 1| > 0.1`, the code warns and renormalizes
-`P(s) <- P(s)/ [\Int P ds]`. This is required because WHAM weights windows as
+If `|∫P ds − 1| > 0.1`, the code warns and renormalizes
+`P(s) ← P(s)/∫P ds`. This is required because WHAM weights windows as
 `nmax * P_i(s)`.
 
 ---
@@ -198,9 +206,18 @@ With `nboot > 0`, errors use a **Poisson bootstrap** of histogram counts:
 
 1. Bin counts \(N_i(s) = n_{\max,i}\,P_i(s)\,\Delta s\) (or raw counts from time series).
 2. Draw \(N_i^*(s) \sim \mathrm{Poisson}(N_i(s))\).
-3. Renormalize to \(P_i^*\), align each PMF to the reference bin (\(\min F\)).
+3. Renormalize to \(P_i^*\), re-solve WHAM, align each PMF to the reference bin (\(\min F\)).
 4. \(\mathrm{d}F(s) =\) sample standard deviation over the `nboot` PMFs.
 
 This assumes independent bin counts. For strongly correlated MD, a block bootstrap of trajectories is more rigorous (not implemented; full trajectories can be huge). Prefer decorrelated/strided frames and a sufficient `nboot`.
 
+---
 
+## Quick test
+
+```bash
+cd test
+mpirun -np 1 ../wham1d
+```
+
+Compare `free_energy.dat` with `true_fes.dat`.
